@@ -12,7 +12,9 @@
       "generator": "Unix Makefiles",
       "binaryDir": "${sourceDir}/build/debug",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug"
+        "CMAKE_BUILD_TYPE": "Debug",
+        "DPE_BUILD_TESTS": "ON",
+        "DPE_BUILD_BENCHMARKS": "OFF"
       }
     },
     {
@@ -22,7 +24,8 @@
       "binaryDir": "${sourceDir}/build/asan",
       "cacheVariables": {
         "DPE_ENABLE_ASAN": "ON",
-        "DPE_ENABLE_UBSAN": "OFF"
+        "DPE_ENABLE_UBSAN": "OFF",
+        "DPE_BUILD_BENCHMARKS": "OFF"
       }
     },
     {
@@ -32,16 +35,19 @@
       "binaryDir": "${sourceDir}/build/ubsan",
       "cacheVariables": {
         "DPE_ENABLE_ASAN": "OFF",
-        "DPE_ENABLE_UBSAN": "ON"
+        "DPE_ENABLE_UBSAN": "ON",
+        "DPE_BUILD_BENCHMARKS": "OFF"
       }
     },
     {
-      "name": "release",
-      "displayName": "Release",
+      "name": "release-bench",
+      "displayName": "Release Bench",
       "generator": "Unix Makefiles",
-      "binaryDir": "${sourceDir}/build/release",
+      "binaryDir": "${sourceDir}/build/release-bench",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
+        "CMAKE_BUILD_TYPE": "Release",
+        "DPE_BUILD_TESTS": "OFF",
+        "DPE_BUILD_BENCHMARKS": "ON"
       }
     }
   ],
@@ -59,8 +65,31 @@
       "configurePreset": "ubsan"
     },
     {
-      "name": "build-release",
-      "configurePreset": "release"
+      "name": "build-release-bench",
+      "configurePreset": "release-bench"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "test-debug",
+      "configurePreset": "debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "test-asan",
+      "configurePreset": "asan",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "test-ubsan",
+      "configurePreset": "ubsan",
+      "output": {
+        "outputOnFailure": true
+      }
     }
   ]
 }

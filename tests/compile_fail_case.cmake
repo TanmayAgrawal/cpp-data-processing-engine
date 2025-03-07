@@ -1,0 +1,37 @@
+if(NOT DEFINED CASE_SOURCE)
+  message(FATAL_ERROR "CASE_SOURCE is required")
+endif()
+
+if(NOT DEFINED BINARY_DIR)
+  message(FATAL_ERROR "BINARY_DIR is required")
+endif()
+
+if(NOT DEFINED CXX_COMPILER)
+  message(FATAL_ERROR "CXX_COMPILER is required")
+endif()
+
+if(NOT DEFINED CXX_STANDARD)
+  message(FATAL_ERROR "CXX_STANDARD is required")
+endif()
+
+if(NOT DEFINED DPE_INCLUDE_DIR)
+  message(FATAL_ERROR "DPE_INCLUDE_DIR is required")
+endif()
+
+file(MAKE_DIRECTORY "${BINARY_DIR}")
+set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+
+try_compile(
+  CASE_COMPILED
+  "${BINARY_DIR}"
+  SOURCES "${CASE_SOURCE}"
+  CMAKE_FLAGS
+    "-DCMAKE_CXX_COMPILER=${CXX_COMPILER}"
+    "-DCMAKE_CXX_STANDARD=${CXX_STANDARD}"
+    "-DCMAKE_CXX_STANDARD_REQUIRED=ON"
+    "-DCMAKE_CXX_EXTENSIONS=OFF"
+    "-DCMAKE_CXX_FLAGS=-I${DPE_INCLUDE_DIR}")
+
+if(CASE_COMPILED)
+  message(FATAL_ERROR "Expected compilation failure for ${CASE_SOURCE}, but compilation succeeded.")
+endif()
