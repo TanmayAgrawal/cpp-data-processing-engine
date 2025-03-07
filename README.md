@@ -1,26 +1,39 @@
 # Data Processing Engine
 
-This repository starts with the compile-time foundation for a columnar analytics engine in modern C++20.
+`data-processing-engine` is a modern C++20 columnar analytics engine built around compile-time schemas, expression templates, immutable snapshots, and policy-based execution.
 
-## What Is Included
+This snapshot introduces the full in-memory engine and end-to-end demo pipeline. Validation and benchmarking land in the next step.
 
-- `fixed_string` for compile-time column names
-- `field` and `schema` for type-safe compile-time schemas
-- `batch` helpers for span-based column views
-- lazy expression templates built from `col<"...">()` and overloaded operators
+## Highlights
 
-The first snapshot focuses on the type system and expression DSL before storage, execution, and query runtime layers are introduced.
+- Compile-time schemas with `schema<field<"...", T>, ...>`
+- Lazy expression trees built from overloaded operators
+- Columnar storage with heap and memory-mapped policies
+- Snapshot-based table API with lock-free reads
+- Filter, select, group-by, and aggregate query pipeline
+- Sequenced and parallel execution policies
 
 ## Example
 
 ```cpp
 using sales_schema = dpe::schema<
     dpe::field<"order_id", std::int64_t>,
+    dpe::field<"category", std::string>,
     dpe::field<"price", double>,
     dpe::field<"quantity", std::int32_t>>;
 
-auto revenue = dpe::col<"price">() * dpe::col<"quantity">();
-auto high_value = revenue > 1000.0;
+dpe::table<sales_schema, dpe::heap_storage_policy, dpe::parallel_execution> sales;
+
+const auto revenue = dpe::as<"revenue">(dpe::col<"price">() * dpe::col<"quantity">());
+
+auto summary =
+    sales
+        .filter((dpe::col<"price">() * dpe::col<"quantity">()) > 1000.0)
+        .select(dpe::as<"category">(dpe::col<"category">()), revenue)
+        .groupBy(dpe::name_v<"category">)
+        .aggregate(dpe::count<"orders">(),
+                   dpe::sum<"revenue", "gross_revenue">(),
+                   dpe::avg<"revenue", "avg_revenue">());
 ```
 
 ## Build
@@ -28,13 +41,20 @@ auto high_value = revenue > 1000.0;
 Direct compile:
 
 ```bash
-c++ -std=c++20 -Iinclude main.cpp -o dpe-demo
+c++ -std=c++20 -Iinclude main.cpp src/thread_pool.cpp src/mmap_region.cpp -o dpe-demo
 ./dpe-demo
 ```
 
-Or use CMake presets:
+Or use CMake:
 
 ```bash
 cmake --preset debug
 cmake --build --preset build-debug
 ```
+
+## Layout
+
+- `include/dpe`: public headers
+- `include/dpe/detail`: runtime internals
+- `src`: thread-pool and memory-mapping implementations
+- `main.cpp`: end-to-end usage demo

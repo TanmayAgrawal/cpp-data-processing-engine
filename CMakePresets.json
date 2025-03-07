@@ -16,6 +16,26 @@
       }
     },
     {
+      "name": "asan",
+      "displayName": "ASan",
+      "inherits": "debug",
+      "binaryDir": "${sourceDir}/build/asan",
+      "cacheVariables": {
+        "DPE_ENABLE_ASAN": "ON",
+        "DPE_ENABLE_UBSAN": "OFF"
+      }
+    },
+    {
+      "name": "ubsan",
+      "displayName": "UBSan",
+      "inherits": "debug",
+      "binaryDir": "${sourceDir}/build/ubsan",
+      "cacheVariables": {
+        "DPE_ENABLE_ASAN": "OFF",
+        "DPE_ENABLE_UBSAN": "ON"
+      }
+    },
+    {
       "name": "release",
       "displayName": "Release",
       "generator": "Unix Makefiles",
@@ -29,6 +49,14 @@
     {
       "name": "build-debug",
       "configurePreset": "debug"
+    },
+    {
+      "name": "build-asan",
+      "configurePreset": "asan"
+    },
+    {
+      "name": "build-ubsan",
+      "configurePreset": "ubsan"
     },
     {
       "name": "build-release",
