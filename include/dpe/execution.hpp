@@ -38,6 +38,11 @@ class execution_policy_base {
     derived().for_chunks_impl(total_rows, grain_rows, std::forward<Fn>(fn));
   }
 
+  [[nodiscard]] auto chunk_count(std::size_t total_rows, std::size_t grain_rows) const
+      -> std::size_t {
+    return derived().chunk_count_impl(total_rows, grain_rows);
+  }
+
   [[nodiscard]] auto suggested_grain_rows(std::size_t row_width_bytes = 64U) const -> std::size_t {
     return derived().suggested_grain_rows_impl(row_width_bytes);
   }
@@ -51,6 +56,11 @@ class execution_policy_base {
 struct sequenced_execution : execution_policy_base<sequenced_execution> {
   static constexpr bool is_parallel = false;
   static constexpr bool uses_std_execution = detail::has_std_execution;
+
+  [[nodiscard]] constexpr auto chunk_count_impl(std::size_t total_rows, std::size_t) const
+      -> std::size_t {
+    return total_rows == 0U ? 0U : 1U;
+  }
 
   template <typename Fn>
   void for_chunks_impl(std::size_t total_rows, std::size_t, Fn&& fn) const {
@@ -85,14 +95,26 @@ class parallel_execution : public execution_policy_base<parallel_execution> {
   static constexpr bool is_parallel = true;
   static constexpr bool uses_std_execution = detail::has_std_execution;
 
+  [[nodiscard]] auto chunk_count_impl(std::size_t total_rows, std::size_t grain_rows) const
+      -> std::size_t {
+    if (total_rows == 0U) {
+      return 0U;
+    }
+
+    const auto requested_grain = std::max<std::size_t>(1U, grain_rows);
+    const auto requested_tasks = (total_rows + requested_grain - 1U) / requested_grain;
+    const auto max_tasks = std::max<std::size_t>(1U, pool_->size() * 2U);
+    return std::max<std::size_t>(1U, std::min(requested_tasks, max_tasks));
+  }
+
   template <typename Fn>
   void for_chunks_impl(std::size_t total_rows, std::size_t grain_rows, Fn&& fn) const {
     if (total_rows == 0U) {
       return;
     }
 
-    const auto actual_grain = std::max<std::size_t>(1U, grain_rows);
-    const auto task_count = (total_rows + actual_grain - 1U) / actual_grain;
+    const auto task_count = chunk_count_impl(total_rows, grain_rows);
+    const auto actual_grain = (total_rows + task_count - 1U) / task_count;
 
     std::vector<std::future<void>> futures;
     futures.reserve(task_count);

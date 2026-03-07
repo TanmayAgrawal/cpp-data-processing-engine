@@ -254,18 +254,18 @@ Methodology:
 
 ## Benchmark Results
 
-Measured on April 2, 2026 on an Apple M3 Pro (12 CPU cores, 18 GB RAM) using Apple Clang 16.0.0 and Google Benchmark 1.9.5. All benchmark registrations use `UseRealTime()`, and the table below reports the median rows/sec across 5 repetitions with a `0.5s` minimum run time per benchmark. Filter, projection, and aggregation were run in pairs to reduce cross-benchmark thermal interference on laptop-class hardware.
+Measured on April 2, 2026 on an Apple M3 Pro (12 CPU cores, 18 GB RAM) using Apple Clang 16.0.0 and Google Benchmark 1.9.5. All benchmark registrations use `UseRealTime()`, and the table below reports the median rows/sec across 5 repetitions with a `0.5s` minimum run time per benchmark. Filter, projection, and aggregation were run in pairs to reduce cross-benchmark thermal interference on laptop-class hardware, and the row baselines materialize semantically equivalent outputs so the comparison stays apples-to-apples.
 
 | Benchmark | Rows/sec | Notes |
 | --- | ---: | --- |
-| Columnar Filter | 76.2M | high-value order filter + lazy revenue expression |
-| Row Filter | 161.1M | naive row loop baseline |
-| Columnar Projection | 554.9M | materialized `order_id + revenue` |
-| Row Projection | 280.1M | naive row loop baseline |
-| Columnar Aggregation | 52.7M | group by string `category` with `count/sum/avg` |
-| Row Aggregation | 63.6M | `unordered_map` baseline |
+| Columnar Filter | 110.8M | high-value order filter + lazy revenue expression |
+| Row Filter | 72.5M | naive row loop baseline |
+| Columnar Projection | 590.5M | materialized `order_id + revenue` |
+| Row Projection | 293.9M | naive row loop baseline |
+| Columnar Aggregation | 416.9M | group by string `category` with `count/sum/avg` |
+| Row Aggregation | 62.8M | `unordered_map` baseline |
 
-The engine clears the 10M+ rows/sec target across all measured workloads on this machine. Projection is the strongest path today at roughly 2x the row-store baseline, while filter and string-key aggregation still leave optimization headroom versus the naive row implementation.
+The engine now clears the 10M+ rows/sec target with a healthy margin on all measured workloads on this machine. Projection remains the strongest path, filter moved decisively ahead after fusing filtered materialization, and string-key aggregation improved sharply once group-by sizing stopped assuming near-row-count cardinality.
 
 ## Repository Layout
 

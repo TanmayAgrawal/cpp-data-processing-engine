@@ -4,6 +4,7 @@
 #include <array>
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <shared_mutex>
@@ -51,6 +52,17 @@ struct materialized_column_type<std::string> {
 
 template <typename T>
 using materialized_column_t = typename materialized_column_type<T>::type;
+
+template <typename Schema>
+struct materialized_columns_tuple;
+
+template <typename... Fields>
+struct materialized_columns_tuple<schema<Fields...>> {
+  using type = std::tuple<materialized_column_t<typename Fields::value_type>...>;
+};
+
+template <typename Schema>
+using materialized_columns_tuple_t = typename materialized_columns_tuple<Schema>::type;
 
 template <typename T>
 inline constexpr bool can_vectorize_materialization_v =
@@ -207,6 +219,40 @@ constexpr void resize_tuple_columns(Tuple& tuple, std::size_t size, std::index_s
   (std::get<I>(tuple).resize(size), ...);
 }
 
+template <typename Tuple, std::size_t... I>
+constexpr void reserve_tuple_columns(Tuple& tuple, std::size_t size,
+                                     std::index_sequence<I...>) {
+  (std::get<I>(tuple).reserve(size), ...);
+}
+
+template <typename Column>
+void append_column_values(Column& destination, Column& source) {
+  destination.insert(destination.end(), std::make_move_iterator(source.begin()),
+                     std::make_move_iterator(source.end()));
+}
+
+template <typename Tuple, std::size_t... I>
+void append_tuple_columns(Tuple& destination, Tuple& source, std::index_sequence<I...>) {
+  (append_column_values(std::get<I>(destination), std::get<I>(source)), ...);
+}
+
+template <typename OutputSchema, typename Snapshot, typename Bindings, std::size_t... I>
+void append_output_row_impl(materialized_columns_tuple_t<OutputSchema>& columns,
+                            const Snapshot& snapshot, const Bindings& bindings, std::size_t row,
+                            std::index_sequence<I...>) {
+  ((std::get<I>(columns).push_back(materialize_value<
+           typename schema_field_t<I, OutputSchema>::value_type>(
+       bindings.template expr<schema_field_t<I, OutputSchema>::name>().eval(snapshot, row)))),
+   ...);
+}
+
+template <typename OutputSchema, typename Snapshot, typename Bindings>
+void append_output_row(materialized_columns_tuple_t<OutputSchema>& columns,
+                       const Snapshot& snapshot, const Bindings& bindings, std::size_t row) {
+  append_output_row_impl<OutputSchema>(columns, snapshot, bindings, row,
+                                       std::make_index_sequence<OutputSchema::column_count>{});
+}
+
 template <typename Snapshot, typename FilterExpr, typename ExecPolicy>
 auto build_selection_vector(const Snapshot& snapshot, const FilterExpr& filter,
                             const ExecPolicy& exec_policy) -> std::vector<std::size_t> {
@@ -223,7 +269,7 @@ auto build_selection_vector(const Snapshot& snapshot, const FilterExpr& filter,
     }
     return selected;
   } else {
-    const auto task_count = row_count == 0U ? 0U : ((row_count + grain_rows - 1U) / grain_rows);
+    const auto task_count = exec_policy.chunk_count(row_count, grain_rows);
     std::vector<std::vector<std::size_t>> locals(task_count);
 
     exec_policy.for_chunks(row_count, grain_rows,
@@ -383,11 +429,14 @@ template <typename... Fields>
 class materialized_table<schema<Fields...>> {
  public:
   using schema_type = schema<Fields...>;
-  using columns_type = std::tuple<detail::materialized_column_t<typename Fields::value_type>...>;
+  using columns_type = detail::materialized_columns_tuple_t<schema_type>;
 
   explicit materialized_table(std::size_t row_count = 0U) {
     resize(row_count);
   }
+
+  materialized_table(columns_type columns, std::size_t row_count)
+      : columns_{std::move(columns)}, row_count_{row_count} {}
 
   void resize(std::size_t row_count) {
     row_count_ = row_count;
@@ -439,6 +488,117 @@ class materialized_table<schema<Fields...>> {
   columns_type columns_{};
   std::size_t row_count_{0U};
 };
+
+namespace detail {
+
+template <typename OutputSchema, typename Snapshot, typename Bindings, typename FilterExpr,
+          typename ExecPolicy>
+auto materialize_filtered_projection(const Snapshot& snapshot, const Bindings& bindings,
+                                     const FilterExpr& filter,
+                                     const ExecPolicy& exec_policy)
+    -> materialized_table<OutputSchema> {
+  using columns_type = materialized_columns_tuple_t<OutputSchema>;
+
+  const auto row_count = snapshot.row_count();
+  const auto grain_rows = exec_policy.suggested_grain_rows(64U);
+  const auto reserve_hint =
+      std::min(row_count, std::max<std::size_t>(1024U, row_count / 2U));
+
+  if constexpr (!ExecPolicy::is_parallel) {
+    columns_type columns{};
+    reserve_tuple_columns(columns, reserve_hint,
+                          std::make_index_sequence<OutputSchema::column_count>{});
+
+    std::size_t selected_rows = 0U;
+    for (std::size_t row = 0U; row < row_count; ++row) {
+      if (!filter.eval(snapshot, row)) {
+        continue;
+      }
+
+      append_output_row<OutputSchema>(columns, snapshot, bindings, row);
+      ++selected_rows;
+    }
+
+    return materialized_table<OutputSchema>{std::move(columns), selected_rows};
+  } else {
+    struct local_block {
+      columns_type columns{};
+      std::size_t row_count{0U};
+    };
+
+    const auto task_count = exec_policy.chunk_count(row_count, grain_rows);
+    std::vector<local_block> locals(task_count);
+
+    exec_policy.for_chunks(
+        row_count, grain_rows, [&](std::size_t begin, std::size_t end, std::size_t task) {
+          auto& local = locals[task];
+          reserve_tuple_columns(
+              local.columns, std::max<std::size_t>(256U, (end - begin) / 2U),
+              std::make_index_sequence<OutputSchema::column_count>{});
+
+          for (std::size_t row = begin; row < end; ++row) {
+            if (!filter.eval(snapshot, row)) {
+              continue;
+            }
+
+            append_output_row<OutputSchema>(local.columns, snapshot, bindings, row);
+            ++local.row_count;
+          }
+        });
+
+    columns_type merged_columns{};
+    std::size_t total_selected = 0U;
+    for (const auto& local : locals) {
+      total_selected += local.row_count;
+    }
+
+    reserve_tuple_columns(merged_columns, total_selected,
+                          std::make_index_sequence<OutputSchema::column_count>{});
+    for (auto& local : locals) {
+      append_tuple_columns(merged_columns, local.columns,
+                           std::make_index_sequence<OutputSchema::column_count>{});
+    }
+
+    return materialized_table<OutputSchema>{std::move(merged_columns), total_selected};
+  }
+}
+
+template <fixed_string... Keys, typename Snapshot, typename Bindings, typename FilterExpr>
+auto estimate_group_count(const Snapshot& snapshot, const Bindings& bindings,
+                          const FilterExpr& filter) -> std::size_t {
+  const auto row_count = snapshot.row_count();
+  if (row_count == 0U) {
+    return 0U;
+  }
+
+  using key_type = decltype(make_group_key<Keys...>(snapshot, bindings, 0U));
+  using sample_map_type = open_addressing_table<key_type, std::uint8_t>;
+
+  constexpr auto target_samples = std::size_t{1U << 15U};
+  const auto sampled_rows = std::min(row_count, target_samples);
+  const auto step = std::max<std::size_t>(1U, row_count / sampled_rows);
+
+  sample_map_type sample_map{64U};
+  std::size_t examined_rows = 0U;
+  for (std::size_t row = 0U; row < row_count && examined_rows < sampled_rows; row += step) {
+    ++examined_rows;
+    if (!filter.eval(snapshot, row)) {
+      continue;
+    }
+
+    sample_map.find_or_emplace(make_group_key<Keys...>(snapshot, bindings, row)) = 0U;
+  }
+
+  if (sample_map.size() == 0U || examined_rows == 0U) {
+    return 16U;
+  }
+
+  const auto estimated_groups =
+      ((sample_map.size() * row_count) + examined_rows - 1U) / examined_rows;
+  return std::clamp<std::size_t>(estimated_groups, 16U, row_count);
+}
+
+}  // namespace detail
 
 template <typename StoragePolicy, typename... Fields>
 class table_snapshot<schema<Fields...>, StoragePolicy> {
@@ -542,9 +702,10 @@ class relation {
       return detail::materialize_projection<current_schema_type>(*snapshot_, bindings_,
                                                                  exec_policy_, nullptr);
     } else {
-      auto selection = detail::build_selection_vector(*snapshot_, filter_, exec_policy_);
-      return detail::materialize_projection<current_schema_type>(*snapshot_, bindings_,
-                                                                 exec_policy_, &selection);
+      // A filtered evaluate can be materialized directly in one pass; building a selection vector
+      // first doubles the source-column traffic on filter-heavy queries.
+      return detail::materialize_filtered_projection<current_schema_type>(
+          *snapshot_, bindings_, filter_, exec_policy_);
     }
   }
 
@@ -573,7 +734,7 @@ class relation {
         }
       }
     } else {
-      const auto task_count = row_count == 0U ? 0U : ((row_count + grain_rows - 1U) / grain_rows);
+      const auto task_count = exec_policy_.chunk_count(row_count, grain_rows);
       std::vector<state_tuple> locals(task_count);
 
       exec_policy_.for_chunks(
@@ -639,7 +800,9 @@ class grouped_relation {
 
     const auto row_count = snapshot_->row_count();
     const auto grain_rows = exec_policy_.suggested_grain_rows(64U);
-    map_type merged_map{std::max<std::size_t>(16U, row_count / 4U + 1U)};
+    const auto estimated_groups =
+        detail::estimate_group_count<Keys...>(*snapshot_, bindings_, filter_);
+    map_type merged_map{estimated_groups};
 
     if constexpr (!ExecPolicy::is_parallel) {
       for (std::size_t row = 0U; row < row_count; ++row) {
@@ -654,11 +817,13 @@ class grouped_relation {
             states, *snapshot_, bindings_, row, std::index_sequence_for<Aggregates...>{});
       }
     } else {
-      const auto task_count = row_count == 0U ? 0U : ((row_count + grain_rows - 1U) / grain_rows);
+      const auto task_count = exec_policy_.chunk_count(row_count, grain_rows);
       std::vector<map_type> locals;
       locals.reserve(task_count);
+      const auto local_estimated_groups =
+          std::max<std::size_t>(16U, estimated_groups / std::max<std::size_t>(1U, task_count));
       for (std::size_t task = 0U; task < task_count; ++task) {
-        locals.emplace_back(std::max<std::size_t>(16U, grain_rows / 4U + 1U));
+        locals.emplace_back(local_estimated_groups);
       }
 
       exec_policy_.for_chunks(

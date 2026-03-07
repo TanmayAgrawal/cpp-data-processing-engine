@@ -119,7 +119,7 @@ static void BM_RowFilter(benchmark::State& state) {
   const auto rows_per_iteration = static_cast<std::int64_t>(rows.size());
 
   for (auto _ : state) {
-    std::vector<std::string_view> categories;
+    std::vector<std::string> categories;
     std::vector<double> revenue;
     categories.reserve(rows.size() / 2U);
     revenue.reserve(rows.size() / 2U);
@@ -127,7 +127,7 @@ static void BM_RowFilter(benchmark::State& state) {
     for (const auto& row : rows) {
       const auto row_revenue = row.price * static_cast<double>(row.quantity);
       if (row_revenue > 1000.0) {
-        categories.push_back(row.category);
+        categories.emplace_back(row.category);
         revenue.push_back(row_revenue);
       }
     }
@@ -231,7 +231,16 @@ static void BM_RowAggregation(benchmark::State& state) {
       state_ref.sum += row.price * static_cast<double>(row.quantity);
     }
 
+    double avg_sum = 0.0;
+    for (const auto& [category, state_ref] : aggregates) {
+      benchmark::DoNotOptimize(category.data());
+      avg_sum += state_ref.count == 0
+                     ? 0.0
+                     : (state_ref.sum / static_cast<double>(state_ref.count));
+    }
+
     benchmark::DoNotOptimize(aggregates.size());
+    benchmark::DoNotOptimize(avg_sum);
     benchmark::ClobberMemory();
   }
 
