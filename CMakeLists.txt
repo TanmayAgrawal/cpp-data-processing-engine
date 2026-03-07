@@ -129,6 +129,7 @@ if(DPE_BUILD_TESTS)
         -DCASE_SOURCE=${source_file}
         -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/compile-fail/${test_name}
         -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+        -DCXX_COMPILER_ID=${CMAKE_CXX_COMPILER_ID}
         -DCXX_STANDARD=${CMAKE_CXX_STANDARD}
         -DDPE_INCLUDE_DIR=${PROJECT_SOURCE_DIR}/include
         -P ${PROJECT_SOURCE_DIR}/tests/compile_fail_case.cmake)
@@ -166,8 +167,7 @@ if(DPE_BUILD_BENCHMARKS)
   endif()
 
   add_executable(dpe_benchmarks benchmarks/bench_engine.cpp)
-  target_link_libraries(dpe_benchmarks PRIVATE dpe_core benchmark::benchmark
-                                               benchmark::benchmark_main)
+  target_link_libraries(dpe_benchmarks PRIVATE dpe_core benchmark::benchmark_main)
   dpe_apply_warnings(dpe_benchmarks)
   dpe_enable_sanitizers(dpe_benchmarks)
 endif()

@@ -96,6 +96,7 @@ auto engine() -> dpe::table<bench_schema, dpe::heap_storage_policy, dpe::paralle
 static void BM_ColumnarFilter(benchmark::State& state) {
   auto& table = engine();
   const auto rows = dataset().order_ids.size();
+  const auto rows_per_iteration = static_cast<std::int64_t>(rows);
 
   for (auto _ : state) {
     auto result = table
@@ -107,14 +108,15 @@ static void BM_ColumnarFilter(benchmark::State& state) {
     benchmark::ClobberMemory();
   }
 
-  state.SetItemsProcessed(static_cast<int64_t>(state.iterations() * rows));
+  const auto processed = state.iterations() * rows_per_iteration;
+  state.SetItemsProcessed(processed);
   state.counters["rows/sec"] =
-      benchmark::Counter(static_cast<double>(state.iterations() * rows),
-                         benchmark::Counter::kIsRate);
+      benchmark::Counter(static_cast<double>(processed), benchmark::Counter::kIsRate);
 }
 
 static void BM_RowFilter(benchmark::State& state) {
   const auto& rows = dataset().rows;
+  const auto rows_per_iteration = static_cast<std::int64_t>(rows.size());
 
   for (auto _ : state) {
     std::vector<std::string_view> categories;
@@ -135,15 +137,16 @@ static void BM_RowFilter(benchmark::State& state) {
     benchmark::ClobberMemory();
   }
 
-  state.SetItemsProcessed(static_cast<int64_t>(state.iterations() * rows.size()));
+  const auto processed = state.iterations() * rows_per_iteration;
+  state.SetItemsProcessed(processed);
   state.counters["rows/sec"] =
-      benchmark::Counter(static_cast<double>(state.iterations() * rows.size()),
-                         benchmark::Counter::kIsRate);
+      benchmark::Counter(static_cast<double>(processed), benchmark::Counter::kIsRate);
 }
 
 static void BM_ColumnarProjection(benchmark::State& state) {
   auto& table = engine();
   const auto rows = dataset().order_ids.size();
+  const auto rows_per_iteration = static_cast<std::int64_t>(rows);
 
   for (auto _ : state) {
     auto result = table
@@ -154,14 +157,15 @@ static void BM_ColumnarProjection(benchmark::State& state) {
     benchmark::ClobberMemory();
   }
 
-  state.SetItemsProcessed(static_cast<int64_t>(state.iterations() * rows));
+  const auto processed = state.iterations() * rows_per_iteration;
+  state.SetItemsProcessed(processed);
   state.counters["rows/sec"] =
-      benchmark::Counter(static_cast<double>(state.iterations() * rows),
-                         benchmark::Counter::kIsRate);
+      benchmark::Counter(static_cast<double>(processed), benchmark::Counter::kIsRate);
 }
 
 static void BM_RowProjection(benchmark::State& state) {
   const auto& rows = dataset().rows;
+  const auto rows_per_iteration = static_cast<std::int64_t>(rows.size());
 
   for (auto _ : state) {
     std::vector<std::int64_t> order_ids;
@@ -179,15 +183,16 @@ static void BM_RowProjection(benchmark::State& state) {
     benchmark::ClobberMemory();
   }
 
-  state.SetItemsProcessed(static_cast<int64_t>(state.iterations() * rows.size()));
+  const auto processed = state.iterations() * rows_per_iteration;
+  state.SetItemsProcessed(processed);
   state.counters["rows/sec"] =
-      benchmark::Counter(static_cast<double>(state.iterations() * rows.size()),
-                         benchmark::Counter::kIsRate);
+      benchmark::Counter(static_cast<double>(processed), benchmark::Counter::kIsRate);
 }
 
 static void BM_ColumnarAggregation(benchmark::State& state) {
   auto& table = engine();
   const auto rows = dataset().order_ids.size();
+  const auto rows_per_iteration = static_cast<std::int64_t>(rows);
 
   for (auto _ : state) {
     auto result =
@@ -201,14 +206,15 @@ static void BM_ColumnarAggregation(benchmark::State& state) {
     benchmark::ClobberMemory();
   }
 
-  state.SetItemsProcessed(static_cast<int64_t>(state.iterations() * rows));
+  const auto processed = state.iterations() * rows_per_iteration;
+  state.SetItemsProcessed(processed);
   state.counters["rows/sec"] =
-      benchmark::Counter(static_cast<double>(state.iterations() * rows),
-                         benchmark::Counter::kIsRate);
+      benchmark::Counter(static_cast<double>(processed), benchmark::Counter::kIsRate);
 }
 
 static void BM_RowAggregation(benchmark::State& state) {
   const auto& rows = dataset().rows;
+  const auto rows_per_iteration = static_cast<std::int64_t>(rows.size());
 
   for (auto _ : state) {
     struct stats {
@@ -229,17 +235,17 @@ static void BM_RowAggregation(benchmark::State& state) {
     benchmark::ClobberMemory();
   }
 
-  state.SetItemsProcessed(static_cast<int64_t>(state.iterations() * rows.size()));
+  const auto processed = state.iterations() * rows_per_iteration;
+  state.SetItemsProcessed(processed);
   state.counters["rows/sec"] =
-      benchmark::Counter(static_cast<double>(state.iterations() * rows.size()),
-                         benchmark::Counter::kIsRate);
+      benchmark::Counter(static_cast<double>(processed), benchmark::Counter::kIsRate);
 }
 
-BENCHMARK(BM_ColumnarFilter);
-BENCHMARK(BM_RowFilter);
-BENCHMARK(BM_ColumnarProjection);
-BENCHMARK(BM_RowProjection);
-BENCHMARK(BM_ColumnarAggregation);
-BENCHMARK(BM_RowAggregation);
+BENCHMARK(BM_ColumnarFilter)->UseRealTime();
+BENCHMARK(BM_RowFilter)->UseRealTime();
+BENCHMARK(BM_ColumnarProjection)->UseRealTime();
+BENCHMARK(BM_RowProjection)->UseRealTime();
+BENCHMARK(BM_ColumnarAggregation)->UseRealTime();
+BENCHMARK(BM_RowAggregation)->UseRealTime();
 
 }  // namespace
