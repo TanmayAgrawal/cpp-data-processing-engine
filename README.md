@@ -254,7 +254,7 @@ Methodology:
 
 ## Benchmark Results
 
-Measured on April 2, 2026 on an Apple M3 Pro (12 CPU cores, 18 GB RAM) using Apple Clang 16.0.0 and Google Benchmark 1.9.5. All benchmark registrations use `UseRealTime()`, and the table below reports the median rows/sec across 5 repetitions with a `0.5s` minimum run time per benchmark. Filter, projection, and aggregation were run in pairs to reduce cross-benchmark thermal interference on laptop-class hardware, and the row baselines materialize semantically equivalent outputs so the comparison stays apples-to-apples.
+Measured on March 7th, 2026 on an Apple M3 Pro (12 CPU cores, 18 GB RAM) using Apple Clang 16.0.0 and Google Benchmark 1.9.5. All benchmark registrations use `UseRealTime()`, and the table below reports the median rows/sec across 5 repetitions with a `0.5s` minimum run time per benchmark. Filter, projection, and aggregation were run in pairs to reduce cross-benchmark thermal interference on laptop-class hardware, and the row baselines materialize semantically equivalent outputs so the comparison stays apples-to-apples.
 
 | Benchmark | Rows/sec | Notes |
 | --- | ---: | --- |
